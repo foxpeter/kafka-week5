@@ -10,12 +10,13 @@ import java.util.List;
 /**
  * Created by mhw on 2016/11/5.
  */
-public class FIFOLeaderElection {
+public class FIFOLeaderElection implements Watcher{
 
     private String zkHost;
     private String zkPath;
 
     private ZooKeeper zk;
+    private String myName;
 
     public FIFOLeaderElection(String zkHost,String zkPath) {
         this.zkPath = zkPath;
@@ -28,6 +29,31 @@ public class FIFOLeaderElection {
     }
 
     synchronized public void syncLeaderElection(){
+        try {
+
+            myName = zk.create(zkPath + "/node-",null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
+            System.out.println("--myname:" + myName);
+            List<String> children = zk.getChildren(zkPath,false);
+            for(String child : children){
+                System.out.println("--child:" + child);
+            }
+
+            Collections.sort(children);
+
+            if(myName.equals(children.get(0))){
+                System.out.println("I am leader!");
+            }else{
+                //watch pre znode
+                int i = children.indexOf(myName);
+                int preIndex = i - 1;
+                zk.exists(zkPath + "/" + children.get(preIndex) ,this);
+                this.wait();
+            }
+        } catch (KeeperException e) {
+            e.printStackTrace();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
 
     }
 
@@ -97,5 +123,33 @@ public class FIFOLeaderElection {
         list.add("001");
         Collections.sort(list);
         System.out.println(list);
+    }
+
+    @Override
+    public void process(WatchedEvent watchedEvent) {
+        synchronized (this){
+            List<String> children = null;
+            try {
+                children = zk.getChildren(zkPath,false);
+                for(String child : children){
+                    System.out.println("--child:" + child);
+                }
+                Collections.sort(children);
+
+                if(myName.equals(children.get(0))) {
+                    System.out.println("I am leader!");
+                    this.notify();
+                }else{
+                    int i = children.indexOf(myName);
+                    int preIndex = i - 1;
+                    zk.exists(zkPath + "/" + children.get(preIndex) ,this);
+                    this.wait();
+                }
+            } catch (KeeperException e) {
+                e.printStackTrace();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
